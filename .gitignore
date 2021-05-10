@@ -1,0 +1,5 @@
+*.json
+*.log
+*.tmp
+*.exe
+.vscode/

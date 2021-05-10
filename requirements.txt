@@ -1,0 +1,8 @@
+PyQt5
+forex-python
+pillow
+requests
+lxml
+bs4
+pyowm
+geopy
