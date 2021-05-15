@@ -1,6 +1,10 @@
 # TO-DO
-# 3) Frontend of the main window
-# 7) Add more news
+# 1) Add more exception handling
+# 2) Add more news
+# 3) Use new data when opening widget
+# 4) Improve design
+# 5) Add scrolling
+# 6) Add hyperlinks 
 import os
 import sys
 import json
@@ -16,9 +20,8 @@ from lxml import html
 from PIL import Image
 import PIL.ImageQt as PQ
 
-import PyQt5
 from PyQt5.QtWidgets import *
-from PyQt5.QtGui import QKeySequence, QPalette, QColor, QPixmap, QIcon
+from PyQt5.QtGui import *
 from PyQt5.QtCore import Qt
 from PyQt5 import QtWidgets, QtGui, QtCore
 
@@ -71,6 +74,9 @@ userData = {
     "data_update_timeout (sec)": 600,
     "icon_update_timeout (msec)": 1000,
 }
+
+HEIGHT = 640
+WIDTH = 840
 
 geolocator = Nominatim(user_agent="NewsWeatherSysTrayPy")   
 
@@ -220,24 +226,133 @@ class Updater:
 
 up = Updater().start()
 
-
-
 class MainWindow(QWidget):
     def __init__(self, coords):
         global userData, data
 
         super().__init__()
-        layout = QVBoxLayout()
-        self.label = QLabel("Another Window")
-        layout.addWidget(self.label)
+        layout = QGridLayout()
+
+        ##################################### Weather
+        WeatherLayout = QGroupBox("Погода")
+        layout.addWidget(WeatherLayout, 0, 0)
+
+        WeatherInsideLayout = QVBoxLayout()
+        WeatherLayout.setLayout(WeatherInsideLayout)
+
+        # CITY
+        if data["weather"]["city"] == None:
+            WeatherCity = QLabel("Error")
+        else:
+            WeatherCity = QLabel(data["weather"]["city"])
+        WeatherCity.setFont(QFont('Arial', 14))
+        WeatherInsideLayout.addWidget(WeatherCity)
+
+        # IMAGE - INFO
+        WeatherInsideLayoutGrid = QGridLayout()
+        WeatherInsideLayout.addLayout(WeatherInsideLayoutGrid)
+
+        # INFO
+        if data["weather"]["error"] is not None:
+            WeatherStatus = QLabel("Error")
+            WeatherTemperature = QLabel("Error")
+            WeatherHumidity = QLabel("Error")
+            WeatherPressure = QLabel("Error")
+            WeatherWindSpeed = QLabel("Error")
+        else:
+            WeatherStatus = QLabel(data['weather']['status'])
+            WeatherTemperature = QLabel(data['weather']['temperature'])
+            WeatherHumidity = QLabel(data['weather']['humidity'])
+            WeatherPressure = QLabel(data['weather']['pressure'])
+            WeatherWindSpeed = QLabel(data['weather']['wind_speed'])
+
+        WeatherStatus.setFont(QFont('Arial', 12))
+        WeatherTemperature.setFont(QFont('Arial', 12))
+        WeatherHumidity.setFont(QFont('Arial', 12))
+        WeatherPressure.setFont(QFont('Arial', 12))
+        WeatherWindSpeed.setFont(QFont('Arial', 12))
+
+        WeatherInsideLayoutGrid.addWidget(WeatherStatus, 0, 1)
+        WeatherInsideLayoutGrid.addWidget(WeatherHumidity, 1, 1)
+        WeatherInsideLayoutGrid.addWidget(WeatherPressure, 2, 1)
+        WeatherInsideLayoutGrid.addWidget(WeatherWindSpeed, 3, 1)
+
+        WeatherStatus.setAlignment(Qt.AlignRight)
+        WeatherHumidity.setAlignment(Qt.AlignRight)
+        WeatherPressure.setAlignment(Qt.AlignRight)
+        WeatherWindSpeed.setAlignment(Qt.AlignRight)
+
+        # ICON
+        WeatherIconLayoutGrid = QGridLayout()
+        
+        IMAGE = QLabel()
+        
+        if ICON_IMAGE is None:
+            image = "resources/icons/icon.ico"
+            pixmap = QtGui.QPixmap(image)
+        else:
+            image = PQ.ImageQt(ICON_IMAGE)
+            pixmap = QPixmap.fromImage(image)
+
+        IMAGE.resize(150, 150)
+        IMAGE.setPixmap(pixmap.scaled(IMAGE.size(), Qt.KeepAspectRatio))
+        WeatherIconLayoutGrid.addWidget(IMAGE, 0, 0)
+
+        # TEMPERATURE
+        WeatherIconLayoutGrid.addWidget(WeatherTemperature, 0, 1)
+
+        WeatherInsideLayoutGrid.addLayout(WeatherIconLayoutGrid, 0, 0, 4, 1)
+        #####################################
+        ##################################### Currency
+        CurrencyLayout = QGroupBox("Курс валют")
+        layout.addWidget(CurrencyLayout, 0, 1)
+
+        CurrencyLayoutInnerGrid = QGridLayout()
+        CurrencyLayout.setLayout(CurrencyLayoutInnerGrid)
+
+        if data['currency']['error'] is not None:
+            USD = QLabel("Error")
+            EUR = QLabel("Error")
+        else:
+            USD = QLabel(str(data['currency']['USD2RUB']))
+            EUR = QLabel(str(data['currency']['EUR2RUB']))
+
+        USD.setFont(QFont('Arial', 12))
+        EUR.setFont(QFont('Arial', 12)) 
+
+        USD_LABEL = QLabel("USD/RUB")
+        USD_LABEL.setFont(QFont('Arial', 12))
+
+        EUR_LABEL = QLabel("EUR/RUB")
+        EUR_LABEL.setFont(QFont('Arial', 12))
+
+        CurrencyLayoutInnerGrid.addWidget(USD_LABEL, 0, 0)
+        CurrencyLayoutInnerGrid.addWidget(EUR_LABEL, 1, 0)
+
+        CurrencyLayoutInnerGrid.addWidget(USD, 0, 1)
+        CurrencyLayoutInnerGrid.addWidget(EUR, 1, 1)
+        #####################################
+        ##################################### Main news
+        MainNewsLayout = QGroupBox("Главные новости")
+        layout.addWidget(MainNewsLayout, 1, 0, 1, 2)
+        
+        MainNewsInnerLayout = QVBoxLayout()
+        MainNewsLayout.setLayout(MainNewsInnerLayout)
+        if data['main_news']['error'] is None:
+            for i in range(len(data['main_news']['news'])):
+                tempMainNews = QLabel(data['main_news']['news'][i]['label'])
+                tempMainNews.setFont(QFont('Arial', 10))
+                MainNewsInnerLayout.addWidget(tempMainNews)
+        else:
+            tempMainNews = QLabel("Error")
+            tempMainNews.setFont(QFont('Arial', 12))
+            MainNewsInnerLayout.addWidget(tempMainNews)
+        #####################################
 
         self.setLayout(layout)
-
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
         self.setWindowFlags(QtCore.Qt.Popup)
-
-        self.setGeometry(coords[0] - 50, coords[1] - 150, 100, 150)
-        
+        self.setGeometry(coords[0] - WIDTH//2, coords[1] - HEIGHT, WIDTH, HEIGHT)
 
 # class Settings(QWidget):
 #     def __init__(self, coords):
@@ -251,7 +366,7 @@ class MainWindow(QWidget):
 #         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
 #         self.setWindowFlags(QtCore.Qt.Popup)
 
-#         self.setGeometry(coords[0] - 50, coords[1] - 150, 100, 150)
+#         self.setGeometry(coords[0] - WIDTH//2, coords[1] - HEIGHT, WIDTH, HEIGHT)
 
 
 class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
@@ -273,6 +388,7 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
 
         self.UpdateIcon()
         self.activated.connect(self.ShowNewWindow)
+        self.flag = False
 
     def ShowSettings(self):
         global up
@@ -290,8 +406,7 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
             if self.w is None:
                 self.w = MainWindow(currCoords)
             else:
-                self.w.setGeometry(
-                    currCoords[0] - 50, currCoords[1] - 150, 100, 150)
+                self.w.setGeometry(currCoords[0] - WIDTH//2, currCoords[1] - HEIGHT, WIDTH, HEIGHT)
             self.w.show()
 
     def UpdateData(self):
@@ -338,6 +453,7 @@ def DarkTheme():
 
 
 appIcon = QtWidgets.QApplication(sys.argv)
+# qtmodern.styles.dark(appIcon)
 appIcon.setStyle("Fusion")
 if userData.get("theme", "dark") == "dark":
     appIcon.setPalette(DarkTheme())
