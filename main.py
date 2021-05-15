@@ -1,12 +1,14 @@
 # TO-DO
 # 3) Frontend of the main window
-# 6) Check if news have correct encoding
+# 7) Add more news
 import os
 import sys
 import json
 import time
 import requests
 import subprocess
+from threading import Thread
+
 from lxml import etree
 from bs4 import BeautifulSoup
 from lxml import html
@@ -64,44 +66,43 @@ data['news'] = {
 userData = {
     "openweathermap": "API",
     "lat": None,
-    "lon": None
+    "lon": None,
+    "theme": "dark",
+    "data_update_timeout (sec)": 600,
+    "icon_update_timeout (msec)": 1000,
 }
 
-geolocator = Nominatim(user_agent="NewsWeatherSysTrayPy")
+geolocator = Nominatim(user_agent="NewsWeatherSysTrayPy")   
 
 def SaveTempData():
     global userData, data
     with open(TEMP_FILE, "w", encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-def GetTempData(force=False):
+def GetTempData():
     global ICON_IMAGE, userData, data
-    if os.path.exists(TEMP_FILE) and not(force):
-        with open(TEMP_FILE, "r", encoding='utf-8') as f:
-            data = json.load(f)
 
-        if time.time() - data['time'] > 600 or data['weather']['lat'] != userData['lat'] or data['weather']['error'] is not None:
-            data['weather']['lat'] = userData['lat']
-            data['weather']['lon'] = userData['lon']
-            data['weather']['api_key'] = userData['openweathermap']
-            data['time'] = time.time()
+    with open(TEMP_FILE, "r", encoding='utf-8') as f:
+        data = json.load(f)
+    
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        userData = json.load(f)
 
-            GetCurrency()
-            GetMainNews()
-            GetWeather()
-            SaveTempData()    
-    else:
-        data['time'] = time.time()
+    data['weather']['lat'] = userData['lat']
+    data['weather']['lon'] = userData['lon']
+    data['weather']['api_key'] = userData['openweathermap']
 
-        GetCurrency()
-        GetMainNews()
-        GetWeather()
-        SaveTempData()
+    GetCurrency()
+    GetMainNews()
+    GetWeather()
+    SaveTempData()    
 
     try:
         ICON_IMAGE = Image.open(requests.get(data['weather']['icon'], stream=True).raw)
     except requests.exceptions.RequestException as e:
         ICON_IMAGE = None
+
+    data['time'] = time.time()
 
 def GetWeather():
     global userData, data
@@ -144,7 +145,6 @@ def GetCurrency():
     else:
         data['currency']['error'] = None
 
-
 def GetMainNews():
     global userData, data
     DATAURL = 'https://yandex.ru/'
@@ -160,6 +160,7 @@ def GetMainNews():
         if len(page_list) == 0:
             data['main_news']['error'] = "Could not find main news: change parser"
         else:
+            data['main_news']['news'] = []
             for i in page_list:
                 a = i.find('a')
                 try:
@@ -174,14 +175,52 @@ def AskForData():
     global userData, data
 
     subprocess.check_output('start /wait ' + DATA_FILE, shell=True)
+    GetTempData()
 
-    with open(DATA_FILE, 'r') as f:
-        userData = json.load(f)
-    
-    data['weather']['lat'] = userData['lat']
-    data['weather']['lon'] = userData['lon']
-    data['weather']['api_key'] = userData['openweathermap']
-    GetTempData(True)
+class Updater:
+    def __init__(self):
+        global data, userData
+
+        self.stopped = False
+        self.PreviousTime = None
+
+    def FullUpdate(self):
+        if not(os.path.exists(TEMP_FOLDER)):
+            os.mkdir(TEMP_FOLDER)
+
+        if not(os.path.exists(DATA_FILE)):
+            with open(DATA_FILE, "w", encoding='utf-8') as f:
+                json.dump(userData, f, indent=4, ensure_ascii=False)
+            AskForData()
+        else:
+            GetTempData()
+
+    def process(self):
+        global ICON_IMAGE
+        try:
+            while not(self.stopped):
+                if self.PreviousTime == -1:
+                    GetTempData()
+                    self.PreviousTime = time.time()
+                elif self.PreviousTime is None:
+                    self.FullUpdate()
+                    self.PreviousTime = time.time()
+                elif time.time() - self.PreviousTime >= userData.get("data_update_timeout", 30):
+                    GetTempData()
+                    self.PreviousTime = time.time()
+        except KeyboardInterrupt:
+            self.stopped = True
+
+    def start(self):
+        Thread(target=self.process, args=()).start()
+        return self
+
+    def stop(self):
+        self.stopped = True
+
+up = Updater().start()
+
+
 
 class MainWindow(QWidget):
     def __init__(self, coords):
@@ -198,9 +237,7 @@ class MainWindow(QWidget):
         self.setWindowFlags(QtCore.Qt.Popup)
 
         self.setGeometry(coords[0] - 50, coords[1] - 150, 100, 150)
-       
-        GetTempData()
-
+        
 
 # class Settings(QWidget):
 #     def __init__(self, coords):
@@ -230,7 +267,7 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
         exitAction = menu.addAction("Exit")
         self.setContextMenu(menu)
 
-        updateAction.triggered.connect(self.UpdateIcon)
+        updateAction.triggered.connect(self.UpdateData)
         settingAction.triggered.connect(self.ShowSettings)
         exitAction.triggered.connect(self.Destructor)
 
@@ -238,9 +275,13 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
         self.activated.connect(self.ShowNewWindow)
 
     def ShowSettings(self):
+        global up
         AskForData()
+        up.PreviousTime = -1
 
     def Destructor(self, reason):
+        global up
+        up.stop()
         QtWidgets.qApp.quit()
 
     def ShowNewWindow(self, reason):
@@ -253,12 +294,17 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
                     currCoords[0] - 50, currCoords[1] - 150, 100, 150)
             self.w.show()
 
+    def UpdateData(self):
+        global up
+        up.PreviousTime = -1
+        self.UpdateIcon()
+
     def UpdateIcon(self):
         global ICON_IMAGE
         try:
             timer = QtCore.QTimer()
             timer.timeout.connect(self.UpdateIcon)
-            timer.start(600000)
+            timer.start(userData.get("icon_update_timeout", 1000))
             
             if ICON_IMAGE is None:
                 icone = "resources/icons/icon.ico"
@@ -268,11 +314,8 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
                 icone = QIcon(pixmap)
             
             self.setIcon(QtGui.QIcon(icone))
-
-            GetTempData()
         finally:
-            QtCore.QTimer.singleShot(600000, self.UpdateIcon)
-
+            QtCore.QTimer.singleShot(userData.get("icon_update_timeout", 1000), self.UpdateIcon)
 
 def DarkTheme():
     palette = QPalette()
@@ -294,28 +337,11 @@ def DarkTheme():
     return palette
 
 
-if not(os.path.exists(TEMP_FOLDER)):
-    os.mkdir(TEMP_FOLDER)
-
-if not(os.path.exists(DATA_FILE)):
-    with open(DATA_FILE, "w", encoding='utf-8') as f:
-        json.dump(userData, f, indent=4, ensure_ascii=False)
-    AskForData()
-
-with open(DATA_FILE, "r", encoding='utf-8') as f:
-    userData = json.load(f)
-
-data['weather']['api_key'] = userData['openweathermap']
-data['weather']['lat'] = userData['lat']
-data['weather']['lon'] = userData['lon']
-
-GetTempData()
-
-
 appIcon = QtWidgets.QApplication(sys.argv)
 appIcon.setStyle("Fusion")
-if userData["theme"] == "dark":
+if userData.get("theme", "dark") == "dark":
     appIcon.setPalette(DarkTheme())
+
 wIcon = QtWidgets.QWidget()
 trayIcon = SystemTrayIcon(QtGui.QIcon("resources/icons/icon.ico"), wIcon)
 trayIcon.show()
