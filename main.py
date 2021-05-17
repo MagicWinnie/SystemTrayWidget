@@ -5,6 +5,7 @@
 # 4) Improve design
 # 5) Add scrolling
 # 6) Add hyperlinks 
+# 7) Add translations
 import os
 import sys
 import json
@@ -14,8 +15,8 @@ import subprocess
 from threading import Thread
 
 from lxml import etree
-from bs4 import BeautifulSoup
 from lxml import html
+from bs4 import BeautifulSoup
 
 from PIL import Image
 import PIL.ImageQt as PQ
@@ -33,7 +34,7 @@ from pyowm import OWM
 from pyowm.utils.config import get_default_config
 
 TEMP_FOLDER = "C:\\Users\\{}\\Documents\\NewsWeatherSysTrayPy".format(os.getlogin())
-TEMP_FILE = "C:\\Users\\{}\\Documents\\NewsWeatherSysTrayPy\\NewsWeatherSysTrayPy.json".format(os.getlogin())
+TEMP_FILE = "C:\\Users\\{}\\Documents\\NewsWeatherSysTrayPy\\temp.json".format(os.getlogin())
 DATA_FILE = "C:\\Users\\{}\\Documents\\NewsWeatherSysTrayPy\\data.json".format(os.getlogin())
 ICON_IMAGE = None
 
@@ -133,7 +134,7 @@ def GetWeather():
         data['weather']['humidity'] = str(w.humidity) + "%"
         data['weather']['pressure'] = str(w.pressure['press']) + " гПa"
         data['weather']['wind_speed'] = str(w.wind()['speed']) + " м/с"
-        data['weather']['icon'] = w.weather_icon_url(size='2x')
+        data['weather']['icon'] = w.weather_icon_url(size='4x')
 
         location = geolocator.reverse(str(data['weather']['lat']) + "," + str(data['weather']['lon']))
         data['weather']['city'] = location.raw['address'].get('city', "None")
@@ -193,7 +194,9 @@ class Updater:
     def FullUpdate(self):
         if not(os.path.exists(TEMP_FOLDER)):
             os.mkdir(TEMP_FOLDER)
-
+        if not(os.path.exists(TEMP_FILE)):
+            with open(TEMP_FILE, "w", encoding='utf-8') as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
         if not(os.path.exists(DATA_FILE)):
             with open(DATA_FILE, "w", encoding='utf-8') as f:
                 json.dump(userData, f, indent=4, ensure_ascii=False)
@@ -211,7 +214,7 @@ class Updater:
                 elif self.PreviousTime is None:
                     self.FullUpdate()
                     self.PreviousTime = time.time()
-                elif time.time() - self.PreviousTime >= userData.get("data_update_timeout", 30):
+                elif time.time() - self.PreviousTime >= userData.get("data_update_timeout", 600):
                     GetTempData()
                     self.PreviousTime = time.time()
         except KeyboardInterrupt:
@@ -368,7 +371,6 @@ class MainWindow(QWidget):
 
 #         self.setGeometry(coords[0] - WIDTH//2, coords[1] - HEIGHT, WIDTH, HEIGHT)
 
-
 class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
     def __init__(self, icon, parent=None):
         self.w = None
@@ -453,7 +455,6 @@ def DarkTheme():
 
 
 appIcon = QtWidgets.QApplication(sys.argv)
-# qtmodern.styles.dark(appIcon)
 appIcon.setStyle("Fusion")
 if userData.get("theme", "dark") == "dark":
     appIcon.setPalette(DarkTheme())
